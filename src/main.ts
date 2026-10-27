@@ -61,14 +61,23 @@ const ascii = (text: string) =>
 
 interface Config {
   h24: boolean;
-  /** host:port of the Music helper on the Mac. */
-  mac: string;
+  /** host:port addresses of the Music helper on the Mac, Wi-Fi first; the helper keeps them current. */
+  macs: string[];
+  /** Sent with every request; the helper refuses requests without it. */
+  key: string;
 }
 
 function readConfig(values: SettingsValues | null): Config {
   const v = values ?? {};
-  const mac = typeof v.mac_address === "string" ? v.mac_address.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "") : "";
-  return { h24: v.time_format === "24h", mac: mac || DEFAULT_MAC };
+  const macs = (typeof v.mac_address === "string" ? v.mac_address : "")
+    .split(",")
+    .map((m) => m.trim().replace(/^https?:\/\//, "").replace(/\/+$/, ""))
+    .filter((m) => m !== "");
+  return {
+    h24: v.time_format === "24h",
+    macs: macs.length ? macs : [DEFAULT_MAC],
+    key: typeof v.helper_key === "string" ? v.helper_key.trim() : "",
+  };
 }
 
 type PlayerState = "playing" | "paused" | "stopped" | "off";
@@ -185,10 +194,13 @@ function main(): void {
 
   // ---- Mac helper ------------------------------------------------------------------------
 
-  const helper = (path: string) => `http://${config.mac}${path}`;
+  /** Which of the helper's addresses is in use: the next one is tried after a failure. */
+  let macIndex = 0;
+  const helper = (path: string) => `http://${config.macs[macIndex % config.macs.length]}${path}`;
+  const keyHeader = (): Record<string, string> => (config.key ? { "X-Helper-Key": config.key } : {});
 
   async function getJson(path: string): Promise<unknown> {
-    const res = await fetch(helper(path));
+    const res = await fetch(helper(path), { headers: keyHeader() });
     const status = Number(res.status);
     if (status < 200 || status >= 300) throw new Error(`${path}: HTTP ${status}`);
     return res.json();
@@ -197,16 +209,25 @@ function main(): void {
   async function post(path: string, body: object = {}): Promise<void> {
     const res = await fetch(helper(path), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...keyHeader() },
       body: JSON.stringify(body),
     });
     const status = Number(res.status);
     if (status < 200 || status >= 300) throw new Error(`${path}: HTTP ${status}`);
   }
 
+  /** The app's settings: from the runtime's Settings global, or the HTTP API where that's missing. */
+  async function settings(): Promise<SettingsValues | null> {
+    const values = await loadValues();
+    if (values) return values;
+    const doc = await device.AppsSettingsGet({ app_id: APP });
+    return (doc.values ?? null) as SettingsValues | null;
+  }
+
   async function reloadConfig(): Promise<void> {
-    const next = readConfig(await loadValues());
+    const next = readConfig(await settings());
     const changed = next.h24 !== config.h24;
+    if (next.macs.join(",") !== config.macs.join(",")) macIndex = 0;
     config = next;
     if (changed) redraw();
   }
@@ -219,16 +240,22 @@ function main(): void {
       now = readNow(await getJson(lyrics ? "/now?lyrics=1" : "/now"));
       lastOk = Date.now();
       failures = 0;
-    } catch {
-      // Mac asleep or the helper not running: the clock carries on alone. The helper
-      // may have moved, and it rewrites the address setting when it does.
+    } catch (err) {
+      // Reported once per run of failures, not on every retry.
+      if (!failures) report(err);
+      // Mac asleep, the helper not running, or this address gone (cable out, new Wi-Fi):
+      // the clock carries on alone, and the next poll tries the helper's next address.
+      // The helper rewrites the address setting when it moves.
       failures++;
+      macIndex++;
       await reloadConfig().catch(report);
     } finally {
       polling = false;
     }
     redraw();
-    schedulePoll(failures ? Math.min(RETRY_MS * 2 ** (failures - 1), MAX_BACKOFF_MS) : nextPoll());
+    // Each address gets a quick try before backing off.
+    const missed = failures - config.macs.length + 1;
+    schedulePoll(failures ? (missed > 0 ? Math.min(RETRY_MS * 2 ** (missed - 1), MAX_BACKOFF_MS) : 1000) : nextPoll());
   }
 
   /** Steady polling, or sooner when a lyric line is about to change (the helper keeps the timing). */

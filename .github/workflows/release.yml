@@ -49,7 +49,10 @@ jobs:
             echo
             echo "## Install"
             echo
-            echo "On the Mac with Apple Music, with the BUSY Bar plugged in by USB: download \`busybar-music-$version-mac.zip\`, unzip it, and run \`bash install.sh\` in the unzipped folder. It installs the app on the bar and the Music helper on the Mac. The \`.tgz\` is the bar app alone; it needs the helper to show anything but the clock."
+            echo "1. **The bar app:** download \`$id-$version.tgz\` and upload it in the bar's Web UI (**Apps** → **Add app**)."
+            echo "2. **The Mac helper:** on the Mac with Apple Music, download \`busybar-music-$version-mac.zip\`, unzip it, and run \`bash install.sh\` in the unzipped folder. It finds the bar on the Wi-Fi (or USB) by itself, and installs or updates the bar app too."
+            echo
+            echo "See the [README](https://github.com/$GITHUB_REPOSITORY#install) for details."
           } > "$RUNNER_TEMP/details.md"
 
       - run: npm run typecheck

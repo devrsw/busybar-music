@@ -7,15 +7,28 @@
       "label": "Time format",
       "default": "12h",
       "options": [
-        { "value": "12h", "label": "12-hour" },
-        { "value": "24h", "label": "24-hour" }
+        {
+          "value": "12h",
+          "label": "12-hour"
+        },
+        {
+          "value": "24h",
+          "label": "24-hour"
+        }
       ]
     },
     "mac_address": {
       "type": "string",
-      "label": "Mac helper (IP:port, set by the helper)",
+      "label": "Mac helper (set by the helper)",
       "default": "10.0.4.21:8765",
-      "max_length": 64
+      "max_length": 128
+    },
+    "helper_key": {
+      "type": "string",
+      "label": "Helper key (set by the installer)",
+      "default": "",
+      "max_length": 64,
+      "sensitive": true
     }
   }
 }

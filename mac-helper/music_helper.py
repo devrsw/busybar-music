@@ -13,18 +13,26 @@ so this tiny server answers the bar's requests:
   GET  /playlists   ["Chill", "Road Trip", ...]
   POST /shuffle     {"name": "Road Trip"}  -> shuffle-play from a random song
 
-It also writes its own address into the app's "Mac address" setting on the
-bar, so nothing needs configuring. Only the bar (USB network 10.0.4.x) and
-this Mac may connect by default. Standard library only.
+It finds the bar by name over Wi-Fi (Bonjour) or USB and keeps the app's
+"Mac helper" setting pointed at every address the bar can reach it on, so
+nothing needs configuring. Requests must carry the key install.sh generated
+(the app's "Helper key" setting). Standard library only.
+
+  music_helper.py               serve (what the login item runs)
+  music_helper.py --find [NAME] print "ip<TAB>host<TAB>name" of the bar to use, asking
+                                which when several are found; for install.sh
+  music_helper.py --configure   point the bar's app at this Mac once, and exit
 """
 
 import colorsys
+import hmac
 import json
 import os
 import re
 import socket
 import struct
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -33,15 +41,21 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-BAR = os.environ.get("BUSYBAR_HOST", "10.0.4.20")
 PORT = int(os.environ.get("MUSIC_HELPER_PORT", "8765"))
 APP_ID = "io.github.devrsw.music"
-# The bar over USB is 10.0.4.x; set MUSIC_HELPER_ALLOW (comma-separated prefixes) for a bar on Wi-Fi.
+USB_BAR = "10.0.4.20"
+# Set by install.sh: which bar (its name, and where it was found, e.g. "mybar.local"),
+# its HTTP API password if it has one, and the key the bar sends with each request.
+BAR_NAME = os.environ.get("BUSYBAR_NAME", "")
+BAR_HOST = os.environ.get("BUSYBAR_HOST", "")
+BAR_PASSWORD = os.environ.get("BUSYBAR_PASSWORD", "")
+KEY = os.environ.get("MUSIC_HELPER_KEY", "")
+# Without a key (installed by hand), only the USB network and this Mac may connect.
 ALLOWED_PREFIXES = tuple(os.environ.get("MUSIC_HELPER_ALLOW", "10.0.4.,127.0.0.1").split(","))
 
 
 def log(msg):
-    print(time.strftime("%H:%M:%S"), msg, flush=True)
+    print(time.strftime("%H:%M:%S"), msg, file=sys.stderr, flush=True)
 
 
 # ------------------------------------------------------------ Apple Music --
@@ -113,6 +127,16 @@ end run
 '''
 
 _playlists_cache = (0.0, [])
+
+
+def playlists():
+    global _playlists_cache
+    if time.time() - _playlists_cache[0] < 60 and _playlists_cache[1]:
+        return _playlists_cache[1]
+    raw = osascript(PLAYLISTS, timeout=30) or ""
+    names = [n for n in raw.split("\n") if n.strip()][:200]
+    _playlists_cache = (time.time(), names)
+    return names
 
 
 def seconds(text):
@@ -318,8 +342,17 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _allowed(self):
-        if self.client_address[0].startswith(ALLOWED_PREFIXES):
+        if KEY:
+            ok = hmac.compare_digest(self.headers.get("X-Helper-Key", ""), KEY)
+        else:
+            ok = self.client_address[0].startswith(ALLOWED_PREFIXES)
+        if ok:
             return True
+        why = "refused %s: %s" % (self.client_address[0],
+                                  "wrong key" if self.headers.get("X-Helper-Key") else "no key")
+        if why != getattr(Handler, "last_refusal", None):
+            Handler.last_refusal = why  # each reason once, not every poll
+            log(why)
         self._send(403, {"error": "forbidden"})
         return False
 
@@ -372,41 +405,182 @@ class Handler(BaseHTTPRequestHandler):
 def my_ip_towards(host):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect((host, 80))
+        s.connect((host.split(":")[0], 80))
         return s.getsockname()[0]
     finally:
         s.close()
 
 
-def bar_request(method, path, body=None):
+def bar_request(host, method, path, body=None, timeout=5):
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request("http://%s%s" % (BAR, path), data=data, method=method)
+    req = urllib.request.Request("http://%s%s" % (host, path), data=data, method=method)
     if data is not None:
         req.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(req, timeout=5) as r:
+    if BAR_PASSWORD:
+        req.add_header("X-API-Token", BAR_PASSWORD)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read() or b"{}")
+
+
+def bar_name(host):
+    """The name of the bar at `host`, or None when nothing answers there."""
+    try:
+        return bar_request(host, "GET", "/api/name", timeout=3).get("name")
+    except Exception:
+        return None
+
+
+def dns_sd(args, seconds):
+    """Output of a dns-sd query, which runs until stopped."""
+    try:
+        p = subprocess.Popen(["dns-sd", *args], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    except OSError:
+        return ""
+    time.sleep(seconds)
+    p.terminate()
+    try:
+        return p.communicate(timeout=2)[0]
+    except subprocess.TimeoutExpired:
+        p.kill()
+        return ""
+
+
+def browse():
+    """BUSY Bars announcing themselves on the network with Bonjour: [(name, host)].
+
+    Each announces an HTTP service named busybar-<id>, with its display name in
+    the TXT record; its host is a .local name that keeps working when DHCP moves it.
+    """
+    out = dns_sd(["-B", "_http._tcp", "local."], 3)
+    found = []
+
+    def resolve(instance):
+        out = dns_sd(["-L", instance, "_http._tcp", "local."], 2)
+        at = re.search(r"can be reached at (\S+?)\.?:(\d+)", out)
+        if not at:
+            return
+        host = at.group(1) + ("" if at.group(2) == "80" else ":" + at.group(2))
+        name = instance
+        for field in re.findall(r"(?:\\.|[^\s\\])+", out):
+            if field.startswith("name="):
+                name = re.sub(r"\\(.)", r"\1", field[5:])
+        found.append((name, host))
+
+    threads = [threading.Thread(target=resolve, args=(i,))
+               for i in sorted(set(re.findall(r"\s(busybar-[0-9A-Za-z]+)\s*$", out, re.M)))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return found
+
+
+def find_bars():
+    """Every bar this Mac can see, [(name, host)]: one entry per name, Wi-Fi before USB,
+    since Wi-Fi keeps working after the cable comes out."""
+    bars = dict(browse())
+    usb = bar_name(USB_BAR)
+    if usb and usb not in bars:
+        bars[usb] = USB_BAR
+    return sorted(bars.items())
+
+
+def ipv4(host):
+    """IPv4 addresses for a host, Wi-Fi before USB: a bar's .local name resolves to both
+    when it's on both. Resolving IPv4 only, since waiting on IPv6 can take seconds."""
+    name, _, port = host.partition(":")
+    try:
+        ips = {a[4][0] for a in socket.getaddrinfo(name, 80, socket.AF_INET, socket.SOCK_STREAM)}
+    except OSError:
+        return []
+    return [ip + (":" + port if port else "") for ip in sorted(ips, key=lambda ip: (ip == USB_BAR, ip))]
+
+
+def bar_hosts():
+    """Where the chosen bar answers now, as IPs: on Wi-Fi and over USB, whichever respond with its name."""
+    global BAR_HOST
+    matches = lambda n: n is not None and (not BAR_NAME or n == BAR_NAME)
+    candidates = (ipv4(BAR_HOST) if BAR_HOST else []) + [USB_BAR]
+    hosts = [h for h in dict.fromkeys(candidates) if matches(bar_name(h))]
+    if not any(h != USB_BAR for h in hosts) and BAR_NAME:
+        # Not where it was: look it up again (a new .local name, or newly on Wi-Fi).
+        for name, host in browse():
+            if name == BAR_NAME:
+                BAR_HOST = host
+                hosts = [h for h in dict.fromkeys(ipv4(host) + hosts) if matches(bar_name(h))]
+    return hosts
+
+
+def configure():
+    """Points the bar's app at this Mac: every address the bar can reach it on, Wi-Fi first,
+    and the key to send. Returns the addresses."""
+    hosts = bar_hosts()
+    if not hosts:
+        raise RuntimeError("can't find %s" % (repr(BAR_NAME) if BAR_NAME else "the bar"))
+    addrs = ",".join(dict.fromkeys("%s:%d" % (my_ip_towards(h), PORT) for h in hosts))
+    path = "/api/apps/settings?app_id=" + APP_ID
+    doc = bar_request(hosts[0], "GET", path)
+    values = doc.setdefault("values", {})
+    want = {"mac_address": addrs}
+    if KEY:
+        want["helper_key"] = KEY
+    if any(values.get(k) != v for k, v in want.items()):
+        values.update(want)
+        bar_request(hosts[0], "PUT", path, doc)
+        log("told %s to find me at %s" % (BAR_NAME or hosts[0], addrs))
+    return addrs
 
 
 def keep_bar_pointed_here():
     last = None
     while True:
         try:
-            addr = "%s:%d" % (my_ip_towards(BAR), PORT)
-            if addr != last:
-                path = "/api/apps/settings?app_id=" + APP_ID
-                doc = bar_request("GET", path)
-                if doc.get("values", {}).get("mac_address") != addr:
-                    doc["values"]["mac_address"] = addr
-                    bar_request("PUT", path, doc)
-                    log("told the bar to find me at %s" % addr)
-                last = addr
+            status = "pointing %s at %s" % (BAR_NAME or "the bar", configure())
         except Exception as exc:
-            last = None
-            log("can't reach the bar yet (%s)" % exc)
+            status = "can't reach the bar (%s)" % exc
+        if status != last:
+            log(status)  # only changes, so the log stays small
+            last = status
         time.sleep(60)
 
 
+def choose_bar(name):
+    """For install.sh: prints "ip<TAB>host<TAB>name" of the bar to use (an address to reach
+    it at now, and the name to look it up by later); asks on the terminal when
+    several are found and no name was given. Returns the exit status."""
+    bars = find_bars()
+    if name:
+        exact = [b for b in bars if b[0].lower() == name.lower()]
+        bars = exact or [b for b in bars if name.lower() in b[0].lower()]
+    if not bars:
+        print("No BUSY Bar%s found. Is it on the same Wi-Fi as this Mac, or plugged in by USB?"
+              % (" named %r" % name if name else ""), file=sys.stderr)
+        return 1
+    if len(bars) > 1:
+        for i, (n, h) in enumerate(bars, 1):
+            print("  %d) %s  (%s)" % (i, n, h), file=sys.stderr)
+        try:
+            with open("/dev/tty") as tty:
+                print("Which BUSY Bar? [1-%d] " % len(bars), end="", file=sys.stderr, flush=True)
+                bars = [bars[int(tty.readline()) - 1]]
+        except (OSError, ValueError, IndexError):
+            print("Pick one with: bash install.sh --name \"<name>\"", file=sys.stderr)
+            return 2
+    name, host = bars[0]
+    print("%s\t%s\t%s" % ((ipv4(host) or [host])[0], host, name))
+    return 0
+
+
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--find"]:
+        sys.exit(choose_bar(" ".join(sys.argv[2:])))
+    if sys.argv[1:2] == ["--configure"]:
+        try:
+            print(configure())
+        except Exception as exc:
+            print("Couldn't point the bar at this Mac: %s" % exc, file=sys.stderr)
+            sys.exit(1)
+        sys.exit(0)
     threading.Thread(target=keep_bar_pointed_here, daemon=True).start()
     log("Music helper listening on port %d" % PORT)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
