@@ -1,5 +1,6 @@
 #!/bin/bash
-# Run after `npm run build`:
+# Run from the unzipped busybar-music-<version>-mac.zip of a GitHub release, or from a
+# checkout after `npm run build`:
 # 1) installs the "Music" app onto the BUSY Bar (USB, 10.0.4.20)
 # 2) installs the small Music helper on this Mac (starts at login)
 # 3) launches the app on the bar
@@ -9,8 +10,8 @@
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 BAR="${BUSYBAR_HOST:-10.0.4.20}"
-APP_ID="net.scottdevries.music"
-LABEL="net.scottdevries.busybar-music-helper"
+APP_ID="io.github.devrsw.music"
+LABEL="io.github.devrsw.busybar-music-helper"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
 # The first python3 that runs: /usr/bin/python3 is a stub until the Xcode license is accepted.
@@ -29,7 +30,7 @@ if [ "$1" = "uninstall" ]; then
 fi
 
 PKG="$DIR/dist/$APP_ID.tgz"
-[ -f "$PKG" ] || { echo "Build the app first: npm run build"; exit 1; }
+[ -f "$PKG" ] || { echo "No $PKG: run npm run build first, or use the -mac.zip from a GitHub release"; exit 1; }
 
 [ -n "$PY" ] || { echo "No working python3 found (install one, e.g. brew install python)"; exit 1; }
 

@@ -1,4 +1,4 @@
-# Tag 0.1.0 → release with <id>-<version>.tgz attached, whether the tag is pushed from a console or made by a release in the GitHub UI.
+# Tag 0.1.0 → release with <id>-<version>.tgz (the bar app) and busybar-music-<version>-mac.zip (installer, Mac helper and app) attached, whether the tag is pushed from a console or made by a release in the GitHub UI.
 # The tag must match the version in src/appmeta/manifest.json, and the manifest must carry an api_version.
 
 name: Release
@@ -46,11 +46,29 @@ jobs:
             echo "- ID: $id"
             echo "- Version: $version"
             echo "- API version: $api_version"
+            echo
+            echo "## Install"
+            echo
+            echo "On the Mac with Apple Music, with the BUSY Bar plugged in by USB: download \`busybar-music-$version-mac.zip\`, unzip it, and run \`bash install.sh\` in the unzipped folder. It installs the app on the bar and the Music helper on the Mac. The \`.tgz\` is the bar app alone; it needs the helper to show anything but the clock."
           } > "$RUNNER_TEMP/details.md"
 
       - run: npm run typecheck
 
       - run: npm run build -- --tgz-name "{id}-{version}.tgz"
+
+      # The Mac side: the installer and helper with the bar package where install.sh looks for it,
+      # so the zip installs everything without Node or a checkout.
+      - name: Bundle the Mac helper
+        id: bundle
+        run: |
+          id=$(jq -er .id src/appmeta/manifest.json)
+          bundle="busybar-music-$GITHUB_REF_NAME"
+          mkdir -p "$RUNNER_TEMP/$bundle/dist" "$RUNNER_TEMP/$bundle/mac-helper"
+          cp install.sh README.md "$RUNNER_TEMP/$bundle/"
+          cp mac-helper/music_helper.py "$RUNNER_TEMP/$bundle/mac-helper/"
+          cp "dist/${{ steps.manifest.outputs.archive }}" "$RUNNER_TEMP/$bundle/dist/$id.tgz"
+          (cd "$RUNNER_TEMP" && zip -qr "$GITHUB_WORKSPACE/dist/$bundle-mac.zip" "$bundle")
+          echo "zip=dist/$bundle-mac.zip" >> "$GITHUB_OUTPUT"
 
       # A release made from the UI already exists by the time the tag push gets here: attach the archive to it and keep whatever notes were written by hand, below the app's details.
       - name: Publish the release
@@ -60,6 +78,7 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" \
               "dist/${{ steps.manifest.outputs.archive }}" \
+              "${{ steps.bundle.outputs.zip }}" \
               --clobber
             gh release view "$GITHUB_REF_NAME" --json body --jq .body > "$RUNNER_TEMP/body.md"
             # A re-run finds the details already there.
@@ -70,6 +89,7 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" \
               "dist/${{ steps.manifest.outputs.archive }}" \
+              "${{ steps.bundle.outputs.zip }}" \
               --title "$GITHUB_REF_NAME" \
               --notes-file "$RUNNER_TEMP/details.md" \
               --generate-notes

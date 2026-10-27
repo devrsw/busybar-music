@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Instructions for AI coding agents working on `Music` (`net.scottdevries.music`), a JavaScript application for the BUSY Bar, and its Mac helper in `mac-helper/`. See [README.md](./README.md) for the full build, packaging and manifest reference.
+Instructions for AI coding agents working on `Music` (`io.github.devrsw.music`), a JavaScript application for the BUSY Bar, and its Mac helper in `mac-helper/`. See [README.md](./README.md) for the full build, packaging and manifest reference.
 
 The app runs on the bar itself, in the firmware's embedded [JerryScript](https://compat-table.github.io/compat-table/es2016plus/#jerryscript3_0_0) runtime. It is not Node.js and not a browser.
 

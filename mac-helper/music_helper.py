@@ -35,7 +35,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BAR = os.environ.get("BUSYBAR_HOST", "10.0.4.20")
 PORT = int(os.environ.get("MUSIC_HELPER_PORT", "8765"))
-APP_ID = "net.scottdevries.music"
+APP_ID = "io.github.devrsw.music"
 # The bar over USB is 10.0.4.x; set MUSIC_HELPER_ALLOW (comma-separated prefixes) for a bar on Wi-Fi.
 ALLOWED_PREFIXES = tuple(os.environ.get("MUSIC_HELPER_ALLOW", "10.0.4.,127.0.0.1").split(","))
 
@@ -174,7 +174,7 @@ def parse_lrc(lrc):
 
 def lrclib(path, params):
     url = "%s/%s?%s" % (LRCLIB, path, urllib.parse.urlencode(params))
-    req = urllib.request.Request(url, headers={"User-Agent": "busybar-music (github.com/busy-app)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "busybar-music (https://github.com/devrsw/busybar-music)"})
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
             return json.loads(r.read())
