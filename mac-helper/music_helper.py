@@ -338,6 +338,8 @@ def main_color(path):
 # ------------------------------------------------------------------ server --
 
 class Handler(BaseHTTPRequestHandler):
+    connected = set()
+
     def log_message(self, *a):
         pass
 
@@ -347,6 +349,10 @@ class Handler(BaseHTTPRequestHandler):
         else:
             ok = self.client_address[0].startswith(ALLOWED_PREFIXES)
         if ok:
+            ip = self.client_address[0]
+            if ip != "127.0.0.1" and ip not in Handler.connected:
+                Handler.connected.add(ip)  # install.sh waits for this line
+                log("the bar at %s is connected" % ip)
             return True
         why = "refused %s: %s" % (self.client_address[0],
                                   "wrong key" if self.headers.get("X-Helper-Key") else "no key")

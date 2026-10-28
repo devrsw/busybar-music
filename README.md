@@ -29,16 +29,16 @@ Coming from 1.2.0 or earlier? The app's ID changed in 1.2.1, so the new `.tgz` i
 
 ### 2. The helper on the Mac
 
-1. Download `busybar-music-<version>-mac.zip`, unzip it, and move the `busybar-music-<version>` folder somewhere it can stay — the helper runs from it.
+1. Download `busybar-music-<version>-mac.zip` and unzip it (Downloads is fine: the helper is copied to `~/Library/Application Support/busybar-music`, so you can delete the folder afterwards).
 2. In Terminal, in that folder:
 
    ```sh
    bash install.sh
    ```
 
-That's the only command. It finds your bar on the Wi-Fi by itself (Bonjour) or over USB; if it sees more than one bar it lists them by name and asks which. It then installs the helper as a login item, points the app on the bar at it, and starts the app — and installs or updates the bar app too, so step 1 is optional if you go this way.
+That's the only command. It finds your bar on the Wi-Fi by itself (Bonjour) or over USB; if it sees more than one bar it lists them by name and asks which. It then installs the helper as a login item, points the app on the bar at it, and starts the app — and installs or updates the bar app too, so step 1 is optional if you go this way. It finishes by checking that the helper is running and that the bar has connected to it, and says what to do when either fails.
 
-When macOS asks, allow `python3` to **control Music** (or the bar can't see or control playback) and to **find devices on the local network** (so the helper can follow the bar if the Mac's address changes).
+When macOS asks, allow `python3` to **control Music** (or the bar can't see or control playback), to **accept incoming network connections** if the firewall is on (or the bar can't reach the helper), and to **find devices on the local network** (so the helper can follow the bar if the Mac's address changes).
 
 | | |
 |---|---|
@@ -47,7 +47,7 @@ When macOS asks, allow `python3` to **control Music** (or the bar can't see or c
 | `bash install.sh` again | update; reuses the bar, password and key from last time |
 | `bash install.sh uninstall` | remove the helper and the app |
 
-To move the folder later, run `bash install.sh uninstall` from the old place and `bash install.sh` from the new one. No Node is needed; the helper needs Python 3 (`/opt/homebrew/bin/python3`, `/usr/local/bin/python3`, or Apple's `/usr/bin/python3` once the Xcode license is accepted).
+No Node is needed; the helper needs Python 3 (`/opt/homebrew/bin/python3`, `/usr/local/bin/python3`, or Apple's `/usr/bin/python3` once the Xcode license is accepted).
 
 From a checkout instead of a release: `npm install && npm run build && bash install.sh`.
 
@@ -86,7 +86,7 @@ On the bar, or in its Web UI under **Apps** → **Music**:
 
 ## How it works
 
-**Finding each other.** Every BUSY Bar announces itself with Bonjour as `busybar-<id>._http._tcp`, with its display name in the TXT record and a `.local` host name that survives DHCP changes. `install.sh` (through `music_helper.py --find`) picks the bar by name and saves it, with a random helper key, in the login item (`~/Library/LaunchAgents/app.busybar-music.helper.plist`, readable only by you). Every minute the helper checks where that bar answers — its `.local` name and USB `10.0.4.20`, looked up again by name if it moved — and writes this Mac's address towards each into the **Mac helper** setting. The bar uses the first address that answers and moves to the next when one stops (cable out, Mac on another network). The helper logs only changes, to `mac-helper/helper.log`.
+**Finding each other.** Every BUSY Bar announces itself with Bonjour as `busybar-<id>._http._tcp`, with its display name in the TXT record and a `.local` host name that survives DHCP changes. `install.sh` (through `music_helper.py --find`) picks the bar by name and saves it, with a random helper key, in the login item (`~/Library/LaunchAgents/app.busybar-music.helper.plist`, readable only by you). Every minute the helper checks where that bar answers — its `.local` name and USB `10.0.4.20`, looked up again by name if it moved — and writes this Mac's address towards each into the **Mac helper** setting. The bar uses the first address that answers and moves to the next when one stops (cable out, Mac on another network). The login item runs a copy of the helper from `~/Library/Application Support/busybar-music/` (macOS doesn't let login items read Downloads, Desktop or Documents) and logs only changes, to `~/Library/Logs/busybar-music-helper.log`.
 
 macOS's Local Network privacy can stop the login item from reaching the bar (`No route to host` in the log) until you allow `python3` under System Settings → Privacy & Security → Local Network. `install.sh` points the bar at the Mac itself, from Terminal, so this only matters when the Mac's address changes later.
 
