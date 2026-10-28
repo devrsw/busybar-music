@@ -1,4 +1,4 @@
-# Tag 0.1.0 → release with <id>-<version>.tgz (the bar app) and busybar-music-<version>-mac.zip (installer, Mac helper and app) attached, whether the tag is pushed from a console or made by a release in the GitHub UI.
+# Tag 0.1.0 → release with busybar-music-<version>.tgz (the bar app) and busybar-music-<version>-mac.zip (installer, Mac helper and app) attached, whether the tag is pushed from a console or made by a release in the GitHub UI.
 # The tag must match the version in src/appmeta/manifest.json, and the manifest must carry an api_version.
 
 name: Release
@@ -37,7 +37,7 @@ jobs:
             echo "::error::src/appmeta/manifest.json has no api_version"
             exit 1
           fi
-          echo "archive=$id-$version.tgz" >> "$GITHUB_OUTPUT"
+          echo "archive=busybar-music-$version.tgz" >> "$GITHUB_OUTPUT"
           # The app's details, put at the top of the release notes.
           {
             echo "## App details"
@@ -49,7 +49,7 @@ jobs:
             echo
             echo "## Install"
             echo
-            echo "1. **The bar app:** download \`$id-$version.tgz\` and upload it in the bar's Web UI (**Apps** → **Add app**)."
+            echo "1. **The bar app:** download \`busybar-music-$version.tgz\` and upload it in the bar's Web UI (**Apps** → **Add app**)."
             echo "2. **The Mac helper:** on the Mac with Apple Music, download \`busybar-music-$version-mac.zip\`, unzip it, and run \`bash install.sh\` in the unzipped folder. It finds the bar on the Wi-Fi (or USB) by itself, and installs or updates the bar app too."
             echo
             echo "See the [README](https://github.com/$GITHUB_REPOSITORY#install) for details."
@@ -57,7 +57,7 @@ jobs:
 
       - run: npm run typecheck
 
-      - run: npm run build -- --tgz-name "{id}-{version}.tgz"
+      - run: npm run build -- --tgz-name "busybar-music-{version}.tgz"
 
       # The Mac side: the installer and helper with the bar package where install.sh looks for it,
       # so the zip installs everything without Node or a checkout.

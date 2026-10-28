@@ -14,13 +14,35 @@
 # An update reuses the bar, password and key from the last install.
 set -e
 DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_ID="io.github.devrsw.music"
-LABEL="io.github.devrsw.busybar-music-helper"
+APP_ID="app.busybar-music"
+LABEL="app.busybar-music.helper"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 HELPER="$DIR/mac-helper/music_helper.py"
+# Names before 1.2.1, replaced (keeping the bar, password and key) on install.
+OLD_APP_ID="io.github.devrsw.music"
+OLD_LABEL="io.github.devrsw.busybar-music-helper"
+OLD_PLIST="$HOME/Library/LaunchAgents/$OLD_LABEL.plist"
 
-# What the last install chose, from the login item.
-previous() { /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:$1" "$PLIST" 2>/dev/null || true; }
+# What the last install chose, from the login item (or the one before 1.2.1).
+# Empty on a first install: PlistBuddy reports a missing file or key on stdout, so its output
+# only counts when it succeeds.
+previous() {
+  local plist value
+  for plist in "$PLIST" "$OLD_PLIST"; do
+    [ -f "$plist" ] && value="$(/usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:$1" "$plist" 2>/dev/null)" \
+      && { printf '%s' "$value"; return 0; }
+  done
+  return 0
+}
+
+# Removes the login item and app installed under the names before 1.2.1.
+remove_old() {
+  launchctl bootout "gui/$(id -u)/$OLD_LABEL" 2>/dev/null || true
+  rm -f "$OLD_PLIST"
+  # `|| true`: under set -e a failure at the end of an && chain stops the script.
+  [ -n "$1" ] && { bar -m 5 -X DELETE "http://$1/api/apps?app_id=$OLD_APP_ID" >/dev/null 2>&1 || true; }
+  return 0
+}
 
 ACTION=install NAME="" PASSWORD=""
 while [ $# -gt 0 ]; do
@@ -52,8 +74,12 @@ if [ "$ACTION" = uninstall ]; then
   rm -f "$PLIST"
   for h in $HOST 10.0.4.20; do
     bar -m 5 -X POST "http://$h/api/apps/quit" >/dev/null 2>&1 || true
-    bar -m 5 -X DELETE "http://$h/api/apps?app_id=$APP_ID" >/dev/null 2>&1 && break
+    if bar -m 5 -X DELETE "http://$h/api/apps?app_id=$APP_ID" >/dev/null 2>&1; then
+      remove_old "$h"
+      break
+    fi
   done
+  remove_old ""
   echo "Removed."
   exit 0
 fi
@@ -102,6 +128,9 @@ cat > "$PLIST" <<EOF
 </dict></plist>
 EOF
 chmod 600 "$PLIST"  # it holds the helper key and the bar's password
+OLD_HELPER=""
+[ -f "$OLD_PLIST" ] && OLD_HELPER=yes
+remove_old ""  # the old login item, now its choices are copied: it holds the helper's port
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 # The old helper takes a moment to unload; loading before it's gone fails.
 for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -113,9 +142,19 @@ done
 # once macOS lets it on the local network.
 ADDRS="$(BUSYBAR_NAME="$NAME" BUSYBAR_HOST="$HOST" MUSIC_HELPER_KEY="$KEY" "$PY" "$HELPER" --configure)"
 echo "     the bar will reach this Mac at $ADDRS"
+if [ -n "$OLD_HELPER" ] || bar -m 5 "http://$IP/api/apps/settings?app_id=$OLD_APP_ID" >/dev/null 2>&1; then
+  bar -m 5 -X POST "http://$IP/api/apps/quit" >/dev/null 2>&1 || true
+  remove_old "$IP"
+  echo "     removed the older Music app and helper (io.github.devrsw.*)"
+fi
 
 echo "4/4  Launching the app on the bar..."
-bar -m 10 -X POST "http://$IP/api/apps/launch?app_id=$APP_ID" >/dev/null && echo "     running"
+LAUNCH="$(curl -4 -s "${AUTH[@]}" -m 10 -X POST "http://$IP/api/apps/launch?app_id=$APP_ID" || true)"
+case "$LAUNCH" in
+  *'"OK"'*) echo "     running" ;;
+  *priority*) echo "     not now: something with higher priority (a BUSY session?) has the screen; open Music from the APPS menu later" ;;
+  *) echo "     the bar didn't start it (${LAUNCH:-no answer}); open Music from the APPS menu" ;;
+esac
 echo
 echo "Done. Open it any time from the bar's APPS menu (\"Music\")."
 echo "12/24-hour clock: the app's Time format setting (on the bar, or http://$IP -> Apps -> Music)."

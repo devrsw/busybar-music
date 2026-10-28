@@ -1,9 +1,9 @@
 {
   "format_version": 1,
-  "id": "io.github.devrsw.music",
+  "id": "app.busybar-music",
   "name": "Music",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "api_version": "27.12.0",
   "description": "Clock and Apple Music now playing, with play/pause, lyrics and playlist shuffle",
-  "author": "devrsw"
+  "author": ""
 }

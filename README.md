@@ -19,11 +19,13 @@ You need a Mac with Apple Music, and a BUSY Bar (firmware API 27.12.0 or later) 
 
 ### 1. The app on the bar
 
-1. Download `io.github.devrsw.music-<version>.tgz`.
+1. Download `busybar-music-<version>.tgz`.
 2. Open your bar's Web UI: `http://<name>.local`, where `<name>` is the bar's name in lowercase without spaces or punctuation (a bar named "Kitchen Bar" is usually `http://kitchenbar.local`), or `http://10.0.4.20` with the bar plugged in by USB.
 3. **Apps** → **Add app** → **Select file**, and pick the `.tgz`.
 
 Updating is the same: upload the new `.tgz` (or **Apps** → **Music** → **Update app**).
+
+Coming from 1.2.0 or earlier? The app's ID changed in 1.2.1, so the new `.tgz` installs alongside the old Music app: run `install.sh` (step 2), which removes the old one, or delete it in the Web UI.
 
 ### 2. The helper on the Mac
 
@@ -84,7 +86,7 @@ On the bar, or in its Web UI under **Apps** → **Music**:
 
 ## How it works
 
-**Finding each other.** Every BUSY Bar announces itself with Bonjour as `busybar-<id>._http._tcp`, with its display name in the TXT record and a `.local` host name that survives DHCP changes. `install.sh` (through `music_helper.py --find`) picks the bar by name and saves it, with a random helper key, in the login item (`~/Library/LaunchAgents/io.github.devrsw.busybar-music-helper.plist`, readable only by you). Every minute the helper checks where that bar answers — its `.local` name and USB `10.0.4.20`, looked up again by name if it moved — and writes this Mac's address towards each into the **Mac helper** setting. The bar uses the first address that answers and moves to the next when one stops (cable out, Mac on another network). The helper logs only changes, to `mac-helper/helper.log`.
+**Finding each other.** Every BUSY Bar announces itself with Bonjour as `busybar-<id>._http._tcp`, with its display name in the TXT record and a `.local` host name that survives DHCP changes. `install.sh` (through `music_helper.py --find`) picks the bar by name and saves it, with a random helper key, in the login item (`~/Library/LaunchAgents/app.busybar-music.helper.plist`, readable only by you). Every minute the helper checks where that bar answers — its `.local` name and USB `10.0.4.20`, looked up again by name if it moved — and writes this Mac's address towards each into the **Mac helper** setting. The bar uses the first address that answers and moves to the next when one stops (cable out, Mac on another network). The helper logs only changes, to `mac-helper/helper.log`.
 
 macOS's Local Network privacy can stop the login item from reaching the bar (`No route to host` in the log) until you allow `python3` under System Settings → Privacy & Security → Local Network. `install.sh` points the bar at the Mac itself, from Terminal, so this only matters when the Mac's address changes later.
 
@@ -121,12 +123,12 @@ The rest of this README is the BUSY JS app template's reference for building the
 
 ```sh
 npm install
-npm run build         # build the app into dist/io.github.devrsw.music.tgz
+npm run build         # build the app into dist/app.busybar-music.tgz
 npm run app:install   # install it on the BUSY Bar connected over USB
 npm run app:run       # launch the installed app
 ```
 
-The app's id is `io.github.devrsw.music`, set in `src/appmeta/manifest.json`. An id is `<namespace>.<app>`, at most 32 characters, made of Latin letters, digits, underscores, dashes, and dots, and not starting with a dot. If yours still says `app.example`, change it to your own namespace before publishing.
+The app's id is `app.busybar-music`, set in `src/appmeta/manifest.json`. An id is `<namespace>.<app>`, at most 32 characters, made of Latin letters, digits, underscores, dashes, and dots, and not starting with a dot. If yours still says `app.example`, change it to your own namespace before publishing.
 
 ### Layout
 
@@ -180,8 +182,8 @@ Use `short` as the default action for a button press: it fires once, after a nor
 
 | Command | Description |
 | --- | --- |
-| `npm run build` | empties `dist/` and builds the package into `dist/io.github.devrsw.music.tgz` |
-| `npm run build -- --emit dir` | leaves the `io.github.devrsw.music/` folder instead of the `.tgz` |
+| `npm run build` | empties `dist/` and builds the package into `dist/app.busybar-music.tgz` |
+| `npm run build -- --emit dir` | leaves the `app.busybar-music/` folder instead of the `.tgz` |
 | `npm run build -- --emit both` | leaves the folder and the `.tgz` |
 | `npm run build -- --out <path>` | builds into `<path>` instead, replacing only this app's package there |
 | `npm run build -- --tgz-name <name>` | names the `.tgz`, e.g. `"{id}-{version}.tgz"` |
@@ -189,7 +191,7 @@ Use `short` as the default action for a button press: it fires once, after a nor
 | `npm run build -- --bundle` | inlines every module into one `main.js` |
 | `npm run build -- --addr <host>` | sets the BUSY Bar address the app connects to, `localhost` by default |
 | `npm run typecheck` | type-checks the app |
-| `npm run app:install` | installs `dist/io.github.devrsw.music.tgz` on the BUSY Bar; build it first with `npm run build` |
+| `npm run app:install` | installs `dist/app.busybar-music.tgz` on the BUSY Bar; build it first with `npm run build` |
 | `npm run app:uninstall` | removes the app from the BUSY Bar, keeping its settings |
 | `npm run app:run` | launches the installed app |
 | `npm run app:stop` | quits the running app |
@@ -207,17 +209,17 @@ The package folder is named after the app id:
 
 ```
 dist/
-└── io.github.devrsw.music/
+└── app.busybar-music/
     ├── appmeta/manifest.json
     ├── scripts/main.js
     └── images/ animations/ sounds/ resources/
 ```
 
-By default the build packs that folder into `dist/io.github.devrsw.music.tgz`, with the folder itself at the root of the archive, and removes the folder; `--emit dir` keeps only the folder, `--emit both` keeps both. `--tgz-name` gives the archive another name; `{id}` and `{version}` in it are replaced with the manifest values.
+By default the build packs that folder into `dist/app.busybar-music.tgz`, with the folder itself at the root of the archive, and removes the folder; `--emit dir` keeps only the folder, `--emit both` keeps both. `--tgz-name` gives the archive another name; `{id}` and `{version}` in it are replaced with the manifest values.
 
 ### Releasing
 
-Pushing a git tag matching the manifest `version` (e.g. `1.1.0`) builds the app and attaches `io.github.devrsw.music-<version>.tgz` and `busybar-music-<version>-mac.zip` (installer, helper and app) to a GitHub release, with install steps in the notes. The release notes open with the app's name, id, version and API version. The release fails when the tag differs from the manifest `version`.
+Pushing a git tag matching the manifest `version` (e.g. `1.2.1`) builds the app and attaches `busybar-music-<version>.tgz` (the bar app) and `busybar-music-<version>-mac.zip` (installer, helper and app) to a GitHub release, with install steps in the notes. The release notes open with the app's name, id, version and API version. The release fails when the tag differs from the manifest `version`.
 
 ### Manifest
 

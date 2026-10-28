@@ -1,9 +1,9 @@
 {
   "name": "busybar-music",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Clock and Apple Music now playing, with play/pause and playlist shuffle",
-  "author": "devrsw",
+  "author": "",
   "type": "module",
   "scripts": {
     "typecheck": "tsc",

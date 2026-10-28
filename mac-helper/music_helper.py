@@ -42,7 +42,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("MUSIC_HELPER_PORT", "8765"))
-APP_ID = "io.github.devrsw.music"
+APP_ID = "app.busybar-music"
 USB_BAR = "10.0.4.20"
 # Set by install.sh: which bar (its name, and where it was found, e.g. "mybar.local"),
 # its HTTP API password if it has one, and the key the bar sends with each request.
